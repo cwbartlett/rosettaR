@@ -1,0 +1,102 @@
+---
+title: "rosetta"
+author: "Brett Klamer"
+date: "`r format(Sys.time(), '%Y-%m-%d')`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Vignette Title}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+`rosetta` allows an analyst to combine datasets that measure the same latent traits when there is only partial overlap of measurements across the constituent datasets.
+
+# Simulate data
+
+Consider the case where we have three independent datasets which have measurements on three latent factors. In total, we have three variables per latent factor, however, each dataset only measures two out of three per latent factor.
+
+```{r}
+library(rosetta)
+d_sim <- sim(seed = 100)
+d_missing <- d_sim$missing
+d_complete <- d_sim$complete
+```
+
+The simulated 'complete' data would look like
+
+```{r}
+lapply(d_complete, head)
+```
+
+while the simulated 'missing' data (representative of our real life use case) looks like
+
+```{r}
+lapply(d_missing, head)
+```
+
+# Run rosetta
+
+'rosetta' can now be run so that the latent factors contained within the three independent datasets are summarized into a single dataset of factor scores. This allows simplicity, statistical power, and modeling flexibility of a single joint analysis of the information contained within the original data.
+
+```{r}
+d_rosetta <- rosetta(
+  d = d_missing,
+  factor_structure = list(
+    a = c("a_1", "a_2", "a_3"),
+    b = c("b_1", "b_2", "b_3"),
+    c = c("c_1", "c_2", "c_3")
+  )
+)
+
+# combine rosetta results into a single dataset
+d_rosetta <- as.data.frame(do.call("rbind", d_rosetta))
+
+# check the factor score output
+head(d_rosetta)
+```
+
+# Compare results
+
+We will compare the factor scores from the complete data versus the missing data.
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+# get factor scores from complete data
+## bind the complete data
+d_complete <- do.call("rbind", d_complete)
+## create RAM model
+factor_structure <- attributes(d_sim)$factor_structure
+sem_model <- rosetta:::sem_model(factor_structure)
+## observed covariance matrix
+cov_mat <- rosetta:::obs_cov(d_complete)
+## complete sem
+sem_fit <- sem::sem(
+  model = sem_model,
+  S = cov_mat,
+  N = ncol(cov_mat)
+)
+## model results
+complete_fscores <- as.data.frame(sem::fscores(model = sem_fit, data = d_complete))
+
+# Visualize comparison
+## combine data
+d_rosetta <- tidyr::gather(d_rosetta, key = "key", value = "rosetta", a, b, c)
+complete_fscores <- tidyr::gather(complete_fscores, key = "key", value = "complete", a, b, c)
+d_plot <- cbind(d_rosetta, complete_fscores["complete"])
+## plot
+ggplot(d_plot, aes(x = complete, y = rosetta, color = key)) + 
+  geom_point() + 
+  labs(
+    x = "Complete data factor scores",
+    y = "Rosetta factor scores",
+    color = "Factor"
+  )
+## correlation table
+table <- d_plot %>%
+  dplyr::group_by(key) %>%
+  dplyr::summarize(cor = cor(rosetta, complete, method = "pearson"))
+knitr::kable(table, caption = "correlation table")
+```
