@@ -35,7 +35,7 @@
 #'   )
 #' )
 #'
-rosetta <- function(d, factor_structure, missing_corr='normal') {
+rosetta.v2 <- function(d, factor_structure, missing_corr='normal') {
   # Check arguments
   if(!all(unlist(lapply(d, is.data.frame)))) {
     stop("Check the 'd' argument in function rosetta::rosetta(). 'd' needs to be a list of dataframes.")
