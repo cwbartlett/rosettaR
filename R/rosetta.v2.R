@@ -51,7 +51,8 @@ rosetta.v2 <- function(d, factor_structure, missing_corr='normal') {
     d[[i]] <- Filter(function(x)!all(is.na(x)), d[[i]])
   }
   
-
+  print(missing_corr)
+  
   # step 1. unconstrained model
   ## sem RAM text
   sem_model <- sem_model(factor_structure)
