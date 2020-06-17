@@ -1,4 +1,4 @@
-Package: rosetta_v2
+Package: rosetta.v2
 Title: Use Latent Traits to Concatenate Imperfectly Matched Datasets
 Version: 0.1
 Authors@R: c(
@@ -7,7 +7,7 @@ Authors@R: c(
     person("Steven", "Buyske", email = "buyske@stat.rutgers.edu", role = "ctb")
   )
 Description: Incomplete concordance of measurements across datasets poses a major challenge for researchers seeking to combine public databases. 'rosetta' allows the analyst to combine datasets that measure the same latent traits when there is only partial overlap of measurements across the constituent datasets.
-URL: https://github.com/cwbartlett/rosetta_v2
+URL: https://github.com/cwbartlett/rosetta.v2
 License: MIT + file LICENSE
 LazyData: TRUE
 Depends: R (>= 3.1.0)
