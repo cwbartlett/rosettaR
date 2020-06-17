@@ -19,6 +19,7 @@ d <- sim(seed = 100)
 # check feature names
 lapply(d$missing, names)
 
+
 # run rosetta
 d_rosetta <- rosetta(
   d = d$missing,
