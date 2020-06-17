@@ -35,7 +35,7 @@
 #'   )
 #' )
 #'
-rosetta <- function(d, factor_structure) {
+rosetta <- function(d, factor_structure, missing_corr='normal') {
   # Check arguments
   if(!all(unlist(lapply(d, is.data.frame)))) {
     stop("Check the 'd' argument in function rosetta::rosetta(). 'd' needs to be a list of dataframes.")
@@ -43,21 +43,84 @@ rosetta <- function(d, factor_structure) {
   if(length(names(factor_structure)) != length(factor_structure) || any(names(factor_structure) == "")) {
     stop("Check the 'factor_structure' argument in function rosetta::rosetta(). 'factor_structure' needs to be a named list.")
   }
+  if(length(names(factor_structure)) != length(factor_structure) || any(names(factor_structure) == "")) {
+    stop("Check the 'missing_corr' argument in function rosetta::rosetta(). 'missing_corr' can only take on values 'normal' or 'missing'.")
+  }
   # check if there are any fully NA columns in each dataset and remove them
   for(i in seq_along(d)) {
     d[[i]] <- Filter(function(x)!all(is.na(x)), d[[i]])
   }
-
-  # combined data (now we want NAs in columns)
-  d_bind <- rosetta_bind(d)
+  
 
   # step 1. unconstrained model
   ## sem RAM text
   sem_model <- sem_model(factor_structure)
+ 
+  ## if the dataset has a meauser not shared by at least two sub-datasets, then the correlation matrix will have missing values
+  ## while we could test the dataset for this, instead we force the user to specify if they want the missing correlations
+  ## filled in or not.  If we did it automatically, then users might not have intended to have missing data.  This way
+  ## thier eyes are open when they go into this procedure, since they opted in.
+  if(missing_corr=='normal'){
+    # combined data (now we want NAs in columns)
+    d_bind <- rosetta_bind(d)
 
-  ## observed pairwise complete covariance matrix
-  obs_cov <- obs_cov(d_bind)
-
+    ## observed pairwise complete covariance matrix
+    obs_cov <- obs_cov(d_bind)
+  }
+  else if (missing_corr=='missing'){
+    
+    #===============================================================================
+    # Steves algorithm
+    #===============================================================================
+    # 1. Define function to calculate frobenius norm of difference matrix.
+    sm <- function (mat, par) {
+      # Store original correlation matrix and matrix that can be modified
+      mat_par <- mat
+      # Get the missing value locations from the upper triangle
+      mat_par[lower.tri(mat_par)] <- 0
+      index_na <- which(is.na(mat_par), arr.ind = TRUE)
+      # Restore modified matrix and assign values
+      mat_par <- mat
+      for (i in 1:nrow(index_na)) {
+        mat_par[index_na[i,1], index_na[i,2]] <- par[i]
+        mat_par[index_na[i,2], index_na[i,1]] <- par[i]
+      }
+      # Difference between original matrix and nearest positive definite chosen matrix
+      matt_diff <- mat - nearPD(mat_par, corr = TRUE)[["mat"]]
+      # Calculate Frobenius norm of difference matrix
+      frob_norm <- sum(matt_diff^2, na.rm = TRUE)^(1/2)
+      frob_norm
+    }
+    
+    # initial values
+    n_initial <- length(which(is.na(cov_mat)))/2
+    par <- lhs.design(n_initial, nfactors = 1, default.levels = c(-1, 1))[[1]]
+    
+    # 2. Find values which minimize the frobenius norm
+    val <- optim(
+      par = par,
+      mat = cov_mat,
+      fn = sm,
+      lower = -1,
+      upper = 1,
+      method = "L-BFGS-B"
+    )
+    val[["par"]]
+    
+    # 3. Put the estimated values back in original matrix
+    #    There should be a better way...
+    mat_optim <- cov_mat
+    mat_optim[lower.tri(mat_optim)] <- 0
+    index_na <- which(is.na(mat_optim), arr.ind = TRUE)
+    mat_optim <- cov_mat
+    for (i in 1:nrow(index_na)) {
+      mat_optim[index_na[i,1], index_na[i,2]] <- val[["par"]][i]
+      mat_optim[index_na[i,2], index_na[i,1]] <- val[["par"]][i]
+    }
+    is.positive.definite(mat_optim)
+    obs_cov <- mat_optim
+  }
+  
   ## the overall sem fit
   unconstrained_fit <- sem::sem(
     model = sem_model,
