@@ -14,7 +14,8 @@ Depends: R (>= 3.1.0)
 Imports: 
     MASS,
     psych,
-    sem
+    sem,
+    DoE.wrapper
 Suggests:
     testit,
     knitr,
