@@ -68,7 +68,7 @@ rosetta.v2 <- function(d, factor_structure, missing_corr='normal') {
     obs_cov <- obs_cov(d_bind)
   }
   else if (missing_corr=='missing'){
-    
+    print("Using Steve's Algorithm")
     #===============================================================================
     # Steves algorithm
     #===============================================================================
