@@ -15,7 +15,7 @@
 #' @importFrom Matrix nearPD
 #' @importFrom matrixcalc is.positive.definite
 #' @importFrom easyr fac2char
-#' @importFrom dplyr bind bind_rows
+#' @importFrom dplyr bind_rows
 #' 
 #' 
 #' 
