@@ -25,4 +25,4 @@ Suggests:
     ggplot2
 VignetteBuilder: knitr
 Encoding: UTF-8
-RoxygenNote: 6.1.1
+RoxygenNote: 7.1.0

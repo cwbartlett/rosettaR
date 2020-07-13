@@ -18,8 +18,6 @@
 #' @importFrom dplyr bind_rows
 #' 
 #' 
-#' 
-#' 
 #' @export
 #'
 #' @examples
