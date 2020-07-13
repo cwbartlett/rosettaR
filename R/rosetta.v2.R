@@ -94,7 +94,7 @@ rosetta.v2 <- function(d, factor_structure, missing_corr='normal') {
         mat_par[index_na[i,2], index_na[i,1]] <- par[i]
       }
       # Difference between original matrix and nearest positive definite chosen matrix
-      matt_diff <- mat - nearPD(mat_par, corr = TRUE, maxiter = 500, conv.norm.type="F")[["mat"]]
+      matt_diff <- mat - nearPD(mat_par, corr = TRUE, maxit = 500, conv.norm.type="F")[["mat"]]
       # Calculate Frobenius norm of difference matrix
       frob_norm <- sum(matt_diff^2, na.rm = TRUE)^(1/2)
       frob_norm
