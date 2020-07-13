@@ -10,7 +10,15 @@
 #' @return List of dataframes which contain factor scores.
 #'
 #' @importFrom sem sem fscores stdCoef
-#'
+#' @importFrom DoE.wrapper lhs.design
+#' 
+#' @importFrom Matrix nearPD
+#' @importFrom matrixcalc is.positive.definite
+#' @importFrom easyr fac2char
+#' 
+#' 
+#' 
+#' 
 #' @export
 #'
 #' @examples
@@ -61,17 +69,17 @@ rosetta.v2 <- function(d, factor_structure, missing_corr='normal') {
   ## while we could test the dataset for this, instead we force the user to specify if they want the missing correlations
   ## filled in or not.  If we did it automatically, then users might not have intended to have missing data.  This way
   ## thier eyes are open when they go into this procedure, since they opted in.
-  if(missing_corr=='normal'){
+  if(all(missing_corr=='normal')){
     # combined data (now we want NAs in columns)
     d_bind <- rosetta_bind(d)
 
     ## observed pairwise complete covariance matrix
     obs_cov <- obs_cov(d_bind)
   }
-  else if (missing_corr=='missing'){
+  else if (all(missing_corr=='missing')){
     print("Using Steve's Algorithm")
     #===============================================================================
-    # Steves algorithm
+    # Algorithm for filling in missing correlations (S Buyske)
     #===============================================================================
     # 1. Define function to calculate frobenius norm of difference matrix.
     sm <- function (mat, par) {
@@ -87,11 +95,16 @@ rosetta.v2 <- function(d, factor_structure, missing_corr='normal') {
         mat_par[index_na[i,2], index_na[i,1]] <- par[i]
       }
       # Difference between original matrix and nearest positive definite chosen matrix
-      matt_diff <- mat - nearPD(mat_par, corr = TRUE)[["mat"]]
+      matt_diff <- mat - nearPD(mat_par, corr = TRUE, maxiter = 500, conv.norm.type="F")[["mat"]]
       # Calculate Frobenius norm of difference matrix
       frob_norm <- sum(matt_diff^2, na.rm = TRUE)^(1/2)
       frob_norm
     }
+    
+    data <- bind_rows(d)
+    head(data)
+    cov_mat <- cov(data, use = "pairwise.complete.obs")
+    cor_mat <- cov2cor(cov_mat)
     
     # initial values
     n_initial <- length(which(is.na(cov_mat)))/2
