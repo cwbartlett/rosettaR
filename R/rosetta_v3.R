@@ -5,6 +5,8 @@
 #'
 #' @param d A list of dataframes with imperfectly matched features.
 #' @param factor_structure A named list. The list names are the factor names.
+#' @param missing_corr 'normal'(default) or 'missing'. 'missing' tries to impute unobserved pairwise correlations
+#' @param id_colnames optional names  of the columns that uniquely identify each row within a dataset (default is NULL)
 #' Each element is a character vector of feature names for the corresponding factor.
 #'
 #' @return List of dataframes which contain factor scores.
@@ -31,20 +33,21 @@
 #'
 #' # run rosetta
 #' d_rosetta = rosetta(
-#'    d = d$missing,
+#'   d = d$missing,
 #'   factor_structure = list(
 #'     a = c("a_1", "a_2", "a_3"),
 #'     b = c("b_1", "b_2", "b_3"),
 #'     c = c("c_1", "c_2", "c_3")
-#'   )
-#'  )
+#'   ),
+#'   id_colnames = "ID"
+#' )
 #'
 
 
-
 rosetta = function(d,
-                    factor_structure,
-                    missing_corr='normal') {
+                   factor_structure,
+                   missing_corr = 'normal',
+                   id_colnames = NULL) {
   # Check arguments
   if(!all(unlist(lapply(d, is.data.frame)))) {
     stop("Check the 'd' argument in function rosetta::rosetta(). 'd' needs to be a list of dataframes.")
@@ -72,11 +75,14 @@ rosetta = function(d,
   ## filled in or not.  If we did it automatically, then users might not have intended to have missing data.  This way
   ## thier eyes are open when they go into this procedure, since they opted in.
   if(all(missing_corr=='normal')){
+
     # combined data (now we want NAs in columns)
     d_bind = rosetta_bind(d)
 
     ## observed pairwise complete covariance matrix
-    obs_cov = get_obs_cov(d_bind)
+    obs_cov = get_obs_cov(d_bind,
+                          id_colnames)
+
   } else if (all(missing_corr=='missing')){
     message("Using Steve's Algorithm")
     #===============================================================================
@@ -103,6 +109,7 @@ rosetta = function(d,
     }
 
     data = dplyr::bind_rows(d)
+    if(!is.null(id_colnames))data[,-which(colnames(data) %in% id_colnames)]
     head(data)
     cov_mat = cov(data, use = "pairwise.complete.obs")
     cor_mat = cov2cor(cov_mat)
@@ -165,7 +172,7 @@ rosetta = function(d,
                             unconstrained_fit)
 
     # observed pairwise complete covariance matrix
-    obs_cov = get_obs_cov(x)
+    obs_cov = get_obs_cov(x,id_colnames)
     tmp_unlist = unlist(constrained_struc,recursive = TRUE)
     obs_cov_subset = obs_cov[tmp_unlist,tmp_unlist]
 
@@ -178,8 +185,18 @@ rosetta = function(d,
 
     # model results
     constrained_factor_scores =
-      lavaan::lavPredict(constrained_fit, newdata = x)
+      as.data.frame(lavaan::lavPredict(constrained_fit, newdata = x))
 
+    # select ID rows
+    if(!is.null(id_colnames)){
+
+      id_df = as.data.frame(x[,id_colnames])
+      colnames(id_df) <- id_colnames
+
+      # connect IDs to factors scores
+      constrained_factor_scores = dplyr::bind_cols(constrained_factor_scores,
+                                                   id_df)
+    }
     constrained_factor_cov =
       get_fac_cov_estimates_lavaan(constrained_fit,
                                    constrained_struc)
@@ -248,8 +265,10 @@ get_lavaan_model_text = function(factor_structure,lavaan_obj=NULL) {
 }
 
 # Returns the observed pairwise complete covariance matrix.
-get_obs_cov = function(d) {
+get_obs_cov = function(d, id_col = NULL) {
   d = d[, colSums(is.na(d)) < nrow(d)] # Remove columns which only contain NA
+
+  if(!is.null(id_col))d = d[, -which(colnames(d) %in% id_col)]
   obs_cov = cov(d, method = "pearson", use = "pairwise.complete.obs")
   obs_cov
 }
