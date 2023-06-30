@@ -30,9 +30,10 @@ d = sim()
 
 # check feature names
 lapply(d$missing, names)
+lapply(d$complete, names)
 
 # run rosetta
-d_rosetta = rosetta(
+d_rosetta_missing = rosetta(
   d = d$missing,
   factor_structure = list(
     a = c("a_1", "a_2", "a_3"),
@@ -42,7 +43,7 @@ d_rosetta = rosetta(
   id_colnames = "ID"
 )
 
-d_rosetta_mis = rosetta(
+d_rosetta_complete = rosetta(
   d = d$complete,
   factor_structure = list(
     a = c("a_1", "a_2", "a_3"),
@@ -118,17 +119,10 @@ rosetta = function(d,
       frob_norm
     }
 
-    # data = dplyr::bind_rows(d)
-    # if(!is.null(id_colnames))data[,-which(colnames(data) %in% id_colnames)]
-    # head(data)
-
-    # combined data (now we want NAs in columns)
-    d_bind = rosetta_bind(d)
-
-    ## observed pairwise complete covariance matrix
-    cov_mat = get_obs_cov(d_bind,
-                          id_colnames)
-
+    data = dplyr::bind_rows(d)
+    if(!is.null(id_colnames))data[,-which(colnames(data) %in% id_colnames)]
+    head(data)
+    cov_mat = cov(data, use = "pairwise.complete.obs")
     cor_mat = cov2cor(cov_mat)
 
     # initial values
@@ -170,8 +164,7 @@ rosetta = function(d,
   unconstrained_fit =
     lavaan::cfa(model = lavaan_model,
                 sample.cov = obs_cov,
-                sample.nobs = n_data_mean,
-                std.lv = TRUE)
+                sample.nobs = n_data_mean)
 
 
   ## factor covariance estimates
@@ -249,18 +242,15 @@ get_lavaan_model_text = function(factor_structure,lavaan_obj=NULL) {
 
   lavaan_text = NULL
   for(i in seq_along(factor_names)){
+    factor_structure[[i]]
+    fac_eq = paste0(factor_names[i]," =~ ",paste0(factor_structure[[i]],collapse = " + "))
+    lavaan_text = c(lavaan_text, fac_eq)
 
-    if(length(factor_structure[[i]])>0){
-      factor_structure[[i]]
-      fac_eq = paste0(factor_names[i]," =~ ",paste0(factor_structure[[i]],collapse = " + "))
-      lavaan_text = c(lavaan_text, fac_eq)
+    # constrain within-factor covariance to 1
+    # 1* fixes a factor's covariance to 1
+    factor_variance = paste0(factor_names[i]," ~~ 1*", factor_names[i])
 
-      # constrain within-factor covariance to 1
-      # 1* fixes a factor's covariance to 1
-      factor_variance = paste0(factor_names[i]," ~~ 1*", factor_names[i])
-
-      lavaan_text = c(lavaan_text, factor_variance)
-    }
+    lavaan_text = c(lavaan_text, factor_variance)
   }
 
   # if lavaan obj is passed, we'll assume we're doing the constrained fit
@@ -270,20 +260,17 @@ get_lavaan_model_text = function(factor_structure,lavaan_obj=NULL) {
     for(i in seq_along(factor_names)){
       for(j in i:(n_factors)){
         if(!j==i){
-          if( (length(factor_structure[[i]])>0) &
-              (length(factor_structure[[j]])>0) ){
-            # x* fixes a factor's covariance to xs
-            factor_covariance = paste0(factor_names[i]," ~~ ",
-                                       fac_cov_est[(fac_cov_est$lhs==factor_names[i]) &
-                                                     (fac_cov_est$rhs==factor_names[j]),"est"],"*", factor_names[j])
 
-            lavaan_text = c(lavaan_text, factor_covariance)
-          }
+          # x* fixes a factor's covariance to xs
+          factor_covariance = paste0(factor_names[i]," ~~ ",
+                                     fac_cov_est[(fac_cov_est$lhs==factor_names[i]) &
+                                                   (fac_cov_est$rhs==factor_names[j]),"est"],"*", factor_names[j])
+
+          lavaan_text = c(lavaan_text, factor_covariance)
         }
       }
     }
   }
-
 
   return(lavaan_text)
 }
