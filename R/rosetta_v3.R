@@ -199,7 +199,8 @@ rosetta = function(d,
     constrained_fit =
       lavaan::cfa(model = lavaan_model_constrained,
                   sample.cov = obs_cov,
-                  sample.nobs = n_data_mean)
+                  sample.nobs = n_data_mean,
+                  std.lv = TRUE)
 
     # model results
     constrained_factor_scores =
