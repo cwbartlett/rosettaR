@@ -12,6 +12,7 @@
 #' @return List of dataframes which contain factor scores.
 #'
 #' @import lavaan
+#' @import matrixcalc
 #' @importFrom DoE.wrapper lhs.design
 #' @importFrom Matrix nearPD
 #' @importFrom dplyr bind_rows
@@ -23,34 +24,33 @@
 #' #----------------------------------------------------------------------------
 #' # Rosetta example
 #' #----------------------------------------------------------------------------
-#' library(rosetta)
 #'
 #' # simulate data
-d = sim()
-
-# check feature names
-lapply(d$missing, names)
-
-# run rosetta
-d_rosetta = rosetta(
-  d = d$missing,
-  factor_structure = list(
-    a = c("a_1", "a_2", "a_3"),
-    b = c("b_1", "b_2", "b_3"),
-    c = c("c_1", "c_2", "c_3")
-  ),
-  id_colnames = "ID"
-)
-
-d_rosetta_mis = rosetta(
-  d = d$complete,
-  factor_structure = list(
-    a = c("a_1", "a_2", "a_3"),
-    b = c("b_1", "b_2", "b_3"),
-    c = c("c_1", "c_2", "c_3")
-  ),
-  id_colnames = "ID"
-)
+#' d = sim()
+#'
+#' # check feature names
+#' lapply(d$missing, names)
+#'
+#' # run rosetta
+#' d_rosetta_missing = rosetta(
+#'   d = d$missing,
+#'   factor_structure = list(
+#'     a = c("a_1", "a_2", "a_3"),
+#'     b = c("b_1", "b_2", "b_3"),
+#'     c = c("c_1", "c_2", "c_3")
+#'   ),
+#'   id_colnames = "ID"
+#' )
+#'
+#' d_rosetta_complete = rosetta(
+#'   d = d$complete,
+#'   factor_structure = list(
+#'     a = c("a_1", "a_2", "a_3"),
+#'     b = c("b_1", "b_2", "b_3"),
+#'     c = c("c_1", "c_2", "c_3")
+#'   ),
+#'   id_colnames = "ID"
+#' )
 #'
 
 
@@ -129,14 +129,14 @@ rosetta = function(d,
     cov_mat = get_obs_cov(d_bind,
                           id_colnames)
 
-    cor_mat = cov2cor(cov_mat)
+    cor_mat = stats::cov2cor(cov_mat)
 
     # initial values
     n_initial = length(which(is.na(cov_mat)))/2
     par = DoE.wrapper::lhs.design(n_initial, nfactors = 1, default.levels = c(-1, 1))[[1]]
 
     # 2. Find values which minimize the frobenius norm
-    val = optim(
+    val = stats::optim(
       par = par,
       mat = cov_mat,
       fn = sm,
@@ -294,7 +294,7 @@ get_obs_cov = function(d, id_col = NULL) {
   d = d[, colSums(is.na(d)) < nrow(d)] # Remove columns which only contain NA
 
   if(!is.null(id_col))d = d[, -which(colnames(d) %in% id_col)]
-  obs_cov = cov(d, method = "pearson", use = "pairwise.complete.obs")
+  obs_cov = stats::cov(d, method = "pearson", use = "pairwise.complete.obs")
   obs_cov
 }
 

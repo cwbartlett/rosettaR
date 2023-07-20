@@ -59,14 +59,14 @@ rosetta = function(d,
   for(i in seq_along(d)) {
     d[[i]] = Filter(function(x)!all(is.na(x)), d[[i]])
   }
-  
+
   message(missing_corr)
-  
+
   # step 1. unconstrained model
   ## lavaan RAM text
   lavaan_model =
     get_lavaan_model_text(factor_structure)
-  
+
   ## if the dataset has a measure not shared by at least two sub-datasets, then the correlation matrix will have missing values
   ## while we could test the dataset for this, instead we force the user to specify if they want the missing correlations
   ## filled in or not.  If we did it automatically, then users might not have intended to have missing data.  This way
@@ -74,7 +74,7 @@ rosetta = function(d,
   if(all(missing_corr=='normal')){
     # combined data (now we want NAs in columns)
     d_bind = rosetta_bind(d)
-    
+
     ## observed pairwise complete covariance matrix
     obs_cov = get_obs_cov(d_bind)
   } else if (all(missing_corr=='missing')){
@@ -101,16 +101,16 @@ rosetta = function(d,
       frob_norm = sum(matt_diff^2, na.rm = TRUE)^(1/2)
       frob_norm
     }
-    
+
     data = dplyr::bind_rows(d)
     head(data)
     cov_mat = cov(data, use = "pairwise.complete.obs")
     cor_mat = cov2cor(cov_mat)
-    
+
     # initial values
     n_initial = length(which(is.na(cov_mat)))/2
     par = DoE.wrapper::lhs.design(n_initial, nfactors = 1, default.levels = c(-1, 1))[[1]]
-    
+
     # 2. Find values which minimize the frobenius norm
     val = optim(
       par = par,
@@ -121,7 +121,7 @@ rosetta = function(d,
       method = "L-BFGS-B"
     )
     val[["par"]]
-    
+
     # 3. Put the estimated values back in original matrix
     #    There should be a better way...
     mat_optim = cov_mat
@@ -135,98 +135,98 @@ rosetta = function(d,
     matrixcalc::is.positive.definite(mat_optim)
     obs_cov = mat_optim
   }
-  
+
   # get number of rows per data set
   n_data_list = lapply(d,function(x)nrow(x)) |> unlist()
-  
+
   # avg number of rows per dataset
   n_data_mean = mean(n_data_list) |> floor()
-  
+
   ## the overall lavaan fit
   unconstrained_fit =
     lavaan::cfa(model = lavaan_model,
                 sample.cov = obs_cov,
                 sample.nobs = n_data_mean,
                 std.lv = TRUE)
-  
-  
+
+
   ## factor covariance estimates
   unconstrained_factor_cov =
     get_fac_cov_estimates_lavaan(unconstrained_fit,factor_structure)
-  
+
   # step 2. constrained model
   constrained_fit_list = lapply(d, function(x) {
     constrained_struc = lapply(factor_structure, function(y) {
       intersect(names(x), y)
     })
-    
+
     # the constrained model text
     lavaan_model_constrained =
       get_lavaan_model_text(constrained_struc,
                             unconstrained_fit)
-    
+
     # observed pairwise complete covariance matrix
     obs_cov = get_obs_cov(x)
     tmp_unlist = unlist(constrained_struc,recursive = TRUE)
     obs_cov_subset = obs_cov[tmp_unlist,tmp_unlist]
-    
-    
+
+
     ## the overall lavaan fit
     constrained_fit =
       lavaan::cfa(model = lavaan_model_constrained,
                   sample.cov = obs_cov,
                   sample.nobs = n_data_mean,
                   std.lv = TRUE)
-    
+
     # model results
     constrained_factor_scores =
       lavaan::lavPredict(constrained_fit, newdata = x)
-    
+
     constrained_factor_cov =
       get_fac_cov_estimates_lavaan(constrained_fit,
                                    constrained_struc)
-    
+
     list(
       constrained_fit = constrained_fit,
       constrained_factor_scores = constrained_factor_scores,
       constrained_factor_cov = constrained_factor_cov
     )
   })
-  
+
   out = lapply(constrained_fit_list, `[[`, "constrained_factor_scores")
-  
+
   attr(out, "unconstrained_fit_lavaan_object") = unconstrained_fit
   attr(out, "factor_covariance") = unconstrained_factor_cov
   attr(out, "constrained_fit_factor_Scores") = lapply(constrained_fit_list, `[[`, "constrained_fit")
-  
+
   return(out)
 }
 
 # Returns a character vector of the 'RAM' model for rosetta
 get_lavaan_model_text = function(factor_structure,lavaan_obj=NULL) {
-  
+
   ## check arguments
   if(length(names(factor_structure)) != length(factor_structure) || any(names(factor_structure) == "")) {
     stop("Check the 'factor_structure' argument in function rosetta:::get_lavaan_model_text(). 'factor_structure' needs to be a named list.")
   }
-  
+
   x =  factor_structure
   factor_names = names(x)
   n_factors = length(factor_names)
-  
+
   lavaan_text = NULL
   for(i in seq_along(factor_names)){
     factor_structure[[i]]
     fac_eq = paste0(factor_names[i]," =~ ",paste0(factor_structure[[i]],collapse = " + "))
     lavaan_text = c(lavaan_text, fac_eq)
-    
+
     # constrain within-factor covariance to 1
     # 1* fixes a factor's covariance to 1
     factor_variance = paste0(factor_names[i]," ~~ 1*", factor_names[i])
-    
+
     lavaan_text = c(lavaan_text, factor_variance)
   }
-  
+
   # if lavaan obj is passed, we'll assume we're doing the constrained fit
   # for the constrained fit, between factor covariance is fixed to factor covariance estimated from the entire data set (unconstrained estimate)
   if(!is.null(lavaan_obj)){
@@ -234,18 +234,18 @@ get_lavaan_model_text = function(factor_structure,lavaan_obj=NULL) {
     for(i in seq_along(factor_names)){
       for(j in i:(n_factors)){
         if(!j==i){
-          
+
           # x* fixes a factor's covariance to xs
           factor_covariance = paste0(factor_names[i]," ~~ ",
                                      fac_cov_est[(fac_cov_est$lhs==factor_names[i]) &
                                                    (fac_cov_est$rhs==factor_names[j]),"est"],"*", factor_names[j])
-          
+
           lavaan_text = c(lavaan_text, factor_covariance)
         }
       }
     }
   }
-  
+
   return(lavaan_text)
 }
 
@@ -291,7 +291,7 @@ rosetta_bind <- function (x) {
   col_names <- lapply(x, colnames)
   remove <- unlist(multi_diff(col_names))
   stay <- setdiff(unlist(col_names), remove)
-  
+
   ## Remove variables that are not shared with any other dataframe.
   if (is.null(names(x))) { # If an unnamed list, then assign our own names
     names(x) <- 1:length(x)
@@ -301,12 +301,12 @@ rosetta_bind <- function (x) {
     function(z) {x[[z]][, !(names(x[[z]]) %in% remove)]}
   )
   names(removed_cols) <- names(x)
-  
+
   ## Add variables that are shared with other dataframes.
   for (i in 1:length(removed_cols)) {
     removed_cols[[i]][, setdiff(stay, colnames(removed_cols[[i]]))] <- NA
   }
-  
+
   ## Bind dataframes that contain 2 or more shared variables.
   ret <- do.call("rbind", removed_cols)
   ret
@@ -316,21 +316,21 @@ rosetta_bind <- function (x) {
 multi_diff = function(x) {
   # Vector of all unique elements in x
   row_names <- sort(unique(unlist(x)))
-  
+
   # Truth map. True if element i is in set j. Will apply matrix ops.
   map = as.matrix(as.data.frame(lapply(x, function(y){row_names %in% y})))
   rownames(map) <- row_names
-  
+
   # Create non-conflicting column values
   col_vals = 2^seq(0, ncol(map) - 1)
   map = t(t(map) * col_vals)
-  
+
   # Find row names that are not used anywhere else
   diff = lapply(col_vals, function(i) {
     names(which(rowSums(map) == i))
   })
   names(diff) = colnames(map)
-  
+
   # return list of diffs
   diff
 }
@@ -396,18 +396,18 @@ sim <- function(
     n_datasets = n_datasets,
     seed = seed
   )
-  
+
   missing_data <- sim_missing(
     complete = complete_data,
     factor_structure = factor_structure
   )
-  
+
   ret <- list(complete = complete_data, missing = missing_data)
-  
+
   factor_struc <- lapply(names(factor_structure), function(x) {paste(x, factor_structure[[x]], sep = "_")})
   names(factor_struc) <- names(factor_structure)
   attr(ret, "factor_structure") <- factor_struc
-  
+
   ret
 }
 
@@ -419,12 +419,12 @@ sim_complete <- function(loading, correlation, factor_structure, n_rows, n_datas
   if(!is.null(seed)) {
     set.seed(seed)
   }
-  
+
   true_correlation <- psych::sim.structure(
     fx = loading,
     Phi = correlation
   )$model
-  
+
   sim_data <- as.data.frame(
     MASS::mvrnorm(
       n = n_rows * n_datasets,
@@ -432,9 +432,9 @@ sim_complete <- function(loading, correlation, factor_structure, n_rows, n_datas
       Sigma = true_correlation
     )
   )
-  
+
   names(sim_data) <- unlist(lapply(names(factor_structure), function(x) {paste(x, factor_structure[[x]], sep = "_")}))
-  
+
   split_grouping <- cut(seq(1, nrow(sim_data)), breaks = n_datasets, labels = FALSE)
   sim_data_list <- split(x = sim_data, f = split_grouping)
   sim_data_list
@@ -443,19 +443,19 @@ sim_complete <- function(loading, correlation, factor_structure, n_rows, n_datas
 # For each independent dataset, set a variable within each domain to missing
 sim_missing <- function(complete, factor_structure) {
   missing <- complete
-  
+
   column_names <- lapply(names(factor_structure), function(x) {paste(x, factor_structure[[x]], sep = "_")})
   remove_var <- lapply(column_names, sample)
-  
+
   # breaks if there are more datasets than domains
   for(i in seq_along(missing)) {
     missing[[i]][sapply(remove_var, "[[", i)] <- NULL
   }
-  
+
   missing
 }
 
-d_sim = sim( 
+d_sim = sim(
   loading = matrix(
     c(.6, .6, .6, rep(0, 9),
       .6, .6, .6, rep(0, 9),
