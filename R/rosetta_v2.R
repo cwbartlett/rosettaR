@@ -12,7 +12,7 @@
 #' @return List of dataframes which contain factor scores.
 #'
 #' @import lavaan
-#' @import matrixcalc
+#' @importFrom matrixcalc is.positive.definite
 #' @importFrom DoE.wrapper lhs.design
 #' @importFrom Matrix nearPD
 #' @importFrom dplyr bind_rows
