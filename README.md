@@ -1,10 +1,10 @@
-# rosetta
+# rosettaR
 
 `rosetta` provides a method to combine datasets that measure the same latent traits when there is only partial overlap of measurements across the constituent datasets.  In this version it is possible to have measures that are local to only one dataset, though performance will be better if local variables are kept to a minimum.
 ## Installation
 
 ```{r}
-devtools::install_github("cwbartlett/rosetta_v2")
+devtools::install_github("cwbartlett/rosettaR")
 ```
 
 ## Examples
