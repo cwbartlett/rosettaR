@@ -9,15 +9,15 @@
 #'
 #' @return List of dataframes which contain factor scores.
 #'
+#' @import lavaan
 #' @importFrom sem sem fscores stdCoef
 #' @importFrom DoE.wrapper lhs.design
-#' 
+#'
 #' @importFrom Matrix nearPD
-#' @importFrom matrixcalc is.positive.definite
 #' @importFrom easyr fac2char
 #' @importFrom dplyr bind_rows
-#' 
-#' 
+#'
+#'
 #' @export
 #'
 #' @examples
@@ -34,19 +34,22 @@
 #'
 #' # run rosetta
 #' d_rosetta <- rosetta(
-#'   d = d$missing,
+#'    d = d$missing,
 #'   factor_structure = list(
 #'     a = c("a_1", "a_2", "a_3"),
 #'     b = c("b_1", "b_2", "b_3"),
 #'     c = c("c_1", "c_2", "c_3")
 #'   )
-#' )
+#'  )
 #'
-rosetta.v2 <- function(d, factor_structure, missing_corr='normal') {
+
+rosetta.v3 <- function(d,
+                       factor_structure,
+                       missing_corr='normal') {
   # Check arguments
   if(!all(unlist(lapply(d, is.data.frame)))) {
     stop("Check the 'd' argument in function rosetta::rosetta(). 'd' needs to be a list of dataframes.")
-  }
+  } # TODO: maybe a better test here (e.g. "is.null", all so check whether || or | is more appropriate)
   if(length(names(factor_structure)) != length(factor_structure) || any(names(factor_structure) == "")) {
     stop("Check the 'factor_structure' argument in function rosetta::rosetta(). 'factor_structure' needs to be a named list.")
   }
@@ -57,14 +60,15 @@ rosetta.v2 <- function(d, factor_structure, missing_corr='normal') {
   for(i in seq_along(d)) {
     d[[i]] <- Filter(function(x)!all(is.na(x)), d[[i]])
   }
-  
-  print(missing_corr)
-  
+
+  message(missing_corr)
+
   # step 1. unconstrained model
   ## sem RAM text
-  sem_model <- sem_model(factor_structure)
- 
-  ## if the dataset has a meauser not shared by at least two sub-datasets, then the correlation matrix will have missing values
+  lavaan_model <-
+    get_lavaan_model_text(factor_structure)
+
+  ## if the dataset has a measure not shared by at least two sub-datasets, then the correlation matrix will have missing values
   ## while we could test the dataset for this, instead we force the user to specify if they want the missing correlations
   ## filled in or not.  If we did it automatically, then users might not have intended to have missing data.  This way
   ## thier eyes are open when they go into this procedure, since they opted in.
@@ -73,10 +77,10 @@ rosetta.v2 <- function(d, factor_structure, missing_corr='normal') {
     d_bind <- rosetta_bind(d)
 
     ## observed pairwise complete covariance matrix
-    obs_cov <- obs_cov(d_bind)
+    obs_cov <- get_obs_cov(d_bind)
   }
   else if (all(missing_corr=='missing')){
-    print("Using Steve's Algorithm")
+    message("Using Steve's Algorithm")
     #===============================================================================
     # Algorithm for filling in missing correlations (S Buyske)
     #===============================================================================
@@ -94,21 +98,21 @@ rosetta.v2 <- function(d, factor_structure, missing_corr='normal') {
         mat_par[index_na[i,2], index_na[i,1]] <- par[i]
       }
       # Difference between original matrix and nearest positive definite chosen matrix
-      matt_diff <- mat - nearPD(mat_par, corr = TRUE, maxit = 500, conv.norm.type="F")[["mat"]]
+      matt_diff <- mat - Matrix::nearPD(mat_par, corr = TRUE, maxit = 500, conv.norm.type="F")[["mat"]]
       # Calculate Frobenius norm of difference matrix
       frob_norm <- sum(matt_diff^2, na.rm = TRUE)^(1/2)
       frob_norm
     }
-    
-    data <- bind_rows(d)
+
+    data <- dplyr::bind_rows(d)
     head(data)
     cov_mat <- cov(data, use = "pairwise.complete.obs")
     cor_mat <- cov2cor(cov_mat)
-    
+
     # initial values
     n_initial <- length(which(is.na(cov_mat)))/2
-    par <- lhs.design(n_initial, nfactors = 1, default.levels = c(-1, 1))[[1]]
-    
+    par <- DoE.wrapper::lhs.design(n_initial, nfactors = 1, default.levels = c(-1, 1))[[1]]
+
     # 2. Find values which minimize the frobenius norm
     val <- optim(
       par = par,
@@ -119,7 +123,7 @@ rosetta.v2 <- function(d, factor_structure, missing_corr='normal') {
       method = "L-BFGS-B"
     )
     val[["par"]]
-    
+
     # 3. Put the estimated values back in original matrix
     #    There should be a better way...
     mat_optim <- cov_mat
@@ -130,19 +134,18 @@ rosetta.v2 <- function(d, factor_structure, missing_corr='normal') {
       mat_optim[index_na[i,1], index_na[i,2]] <- val[["par"]][i]
       mat_optim[index_na[i,2], index_na[i,1]] <- val[["par"]][i]
     }
-    is.positive.definite(mat_optim)
+    matrixcalc::is.positive.definite(mat_optim)
     obs_cov <- mat_optim
   }
-  
-  ## the overall sem fit
-  unconstrained_fit <- sem::sem(
-    model = sem_model,
-    S = obs_cov,
-    N = ncol(obs_cov)
-  )
+
+  ## the overall lavaan fit
+  unconstrained_fit <- lavaan::cfa(model = lavaan_model,
+                                   sample.cov = obs_cov,
+                                   sample.nobs = nrow(data))
 
   ## factor covariance estimates
-  unconstrained_factor_cov <- fac_cov_estimates(unconstrained_fit)
+  unconstrained_factor_cov <-
+    get_fac_cov_estimates_lavaan(unconstrained_fit,factor_structure)
 
   # step 2. constrained model
   constrained_fit_list <- lapply(d, function(x) {
@@ -151,22 +154,21 @@ rosetta.v2 <- function(d, factor_structure, missing_corr='normal') {
     })
 
     # the constrained sem RAM text
-    sem_model <- sem_model(constrained_struc, unconstrained_fit)
+    lavaan_model_c <- get_lavaan_model_text(constrained_struc, unconstrained_fit)
 
     # observed pairwise complete covariance matrix
-    obs_cov <- obs_cov(x)
+    obs_cov <- get_obs_cov(x)
 
-    # the constrained sem fit
-    constrained_fit <- sem::sem(
-      model = sem_model,
-      S = obs_cov,
-      N = ncol(obs_cov)
-    )
+    ## the overall lavaan fit
+    constrained_fit <- lavaan::cfa(model = lavaan_model_c,
+                                    sample.cov = obs_cov,
+                                    sample.nobs = nrow(data))
 
     # model results
-    constrained_factor_scores <- sem::fscores(model = constrained_fit, data = x)
+    constrained_factor_scores <- lavaan::lavPredict(constrained_fit, newdata = x)
 
-    constrained_factor_cov <- fac_cov_estimates(constrained_fit)
+    constrained_factor_cov <- get_fac_cov_estimates_lavaan(constrained_fit,
+                                                           constrained_struc)
 
     list(
       constrained_fit = constrained_fit,
@@ -269,8 +271,49 @@ sem_model <- function(factor_structure, sem_object = NULL) {
   specified_model
 }
 
+# Returns a character vector of the 'RAM' model for rosetta
+get_lavaan_model_text <- function(factor_structure,lavaan_obj=NULL) {
+
+  ## check arguments
+  if(length(names(factor_structure)) != length(factor_structure) || any(names(factor_structure) == "")) {
+    stop("Check the 'factor_structure' argument in function rosetta:::sem_model(). 'factor_structure' needs to be a named list.")
+  }
+
+  x =  factor_structure
+  factor_names <- names(x)
+  n_factors <- length(factor_names)
+  lavaan_text = NULL
+  for(i in seq_along(factor_names)){
+    factor_structure[[i]]
+    fac_eq = paste0(factor_names[i]," =~ ",paste0(factor_structure[[i]],collapse = " + "))
+    lavaan_text = c(lavaan_text, fac_eq)
+
+    # constrain within-factor covariance to 1
+    factor_variance = paste0(factor_names[i]," ~~ 1*", factor_names[i])
+
+    lavaan_text = c(lavaan_text, factor_variance)
+  }
+
+  if(!is.null(lavaan_obj)){
+    fac_cov_est = get_fac_cov_estimates_lavaan(lavaan_obj,factor_structure)
+    for(i in seq_along(factor_names)){
+      for(j in i:(n_factors)){
+        if(!j==i){
+          # constrain factor variance to 1
+          factor_covariance = paste0(factor_names[i]," ~~ ",
+                                     fac_cov_est[(fac_cov_est$lhs==factor_names[i]) &
+                                                   (fac_cov_est$rhs==factor_names[j]),"est"],"*", factor_names[j])
+
+          lavaan_text = c(lavaan_text, factor_covariance)
+        }
+      }
+    }
+  }
+
+  return(lavaan_text)
+}
 # Returns the observed pairwise complete covariance matrix.
-obs_cov <- function(d) {
+get_obs_cov <- function(d) {
   d <- d[, colSums(is.na(d)) < nrow(d)] # Remove columns which only contain NA
   obs_cov <- cov(d, method = "pearson", use = "pairwise.complete.obs")
   obs_cov
@@ -279,11 +322,23 @@ obs_cov <- function(d) {
 # Returns factor covariance estimates from an sem object.
 fac_cov_estimates <- function(sem) {
   n_factors <- sem$m - sem$n
-  coef <- fac2char(sem::stdCoef(sem))
+  coef <- easyr::fac2char(sem::stdCoef(sem))
   n_coef <- nrow(sem::stdCoef(sem))
   n_combins <- ncol(combn(n_factors,2))
   factor_coef <- coef[(n_coef-n_combins+1):n_coef, 1:2]
   colnames(factor_coef) <- c("covariance", "estimate")
   rownames(factor_coef) <- NULL
   factor_coef
+}
+
+
+get_fac_cov_estimates_lavaan <- function(lavaan_model_obj,factor_structure) {
+  pars_est = lavaan_model_obj |> lavaan::parameterestimates()
+  factor_names = names(factor_structure)
+  n_factors = length(factor_names)
+  pars_est = pars_est[(pars_est$lhs %in% factor_names) &
+                        (pars_est$rhs %in% factor_names) &
+                        (pars_est$op %in% '~~'),
+                      c('lhs','op','rhs','est')]
+  return(pars_est)
 }

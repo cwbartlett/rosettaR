@@ -1,6 +1,6 @@
 ---
 title: "rosetta"
-author: "Brett Klamer"
+author: "Brett Klamer (updated by Brendan Galdo)"
 date: "`r format(Sys.time(), '%Y-%m-%d')`"
 output: rmarkdown::html_vignette
 vignette: >
@@ -15,23 +15,40 @@ vignette: >
 
 Consider the case where we have three independent datasets which have measurements on three latent factors. In total, we have three variables per latent factor, however, each dataset only measures two out of three per latent factor.
 
+```{r,message=FALSE}
+# 
+library(devtools)
+load_all()
+
+#library(rosetta)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+
+```
+
 ```{r}
-library(rosetta)
+
 d_sim <- sim(seed = 100)
 d_missing <- d_sim$missing
 d_complete <- d_sim$complete
+
 ```
 
 The simulated 'complete' data would look like
 
 ```{r}
+
 lapply(d_complete, head)
+
 ```
 
 while the simulated 'missing' data (representative of our real life use case) looks like
 
 ```{r}
-lapply(d_missing, head)
+
+lapply(d_complete, head)
 ```
 
 # Run rosetta
@@ -45,7 +62,8 @@ d_rosetta <- rosetta(
     a = c("a_1", "a_2", "a_3"),
     b = c("b_1", "b_2", "b_3"),
     c = c("c_1", "c_2", "c_3")
-  )
+  ),
+  id_colnames = "ID"
 )
 
 # combine rosetta results into a single dataset
@@ -53,6 +71,7 @@ d_rosetta <- as.data.frame(do.call("rbind", d_rosetta))
 
 # check the factor score output
 head(d_rosetta)
+
 ```
 
 # Compare results
@@ -60,43 +79,34 @@ head(d_rosetta)
 We will compare the factor scores from the complete data versus the missing data.
 
 ```{r}
-library(dplyr)
-library(tidyr)
-library(ggplot2)
 
-# get factor scores from complete data
-## bind the complete data
-d_complete <- do.call("rbind", d_complete)
-## create RAM model
-factor_structure <- attributes(d_sim)$factor_structure
-sem_model <- rosetta:::sem_model(factor_structure)
-## observed covariance matrix
-cov_mat <- rosetta:::obs_cov(d_complete)
-## complete sem
-sem_fit <- sem::sem(
-  model = sem_model,
-  S = cov_mat,
-  N = ncol(cov_mat)
+
+# get factor scores from complete data 
+
+d_rosetta_complete = rosetta(
+  d = d_complete,
+  factor_structure = list(
+    a = c("a_1", "a_2", "a_3"),
+    b = c("b_1", "b_2", "b_3"),
+    c = c("c_1", "c_2", "c_3")
+  ),
+  id_colnames = "ID"
 )
-## model results
-complete_fscores <- as.data.frame(sem::fscores(model = sem_fit, data = d_complete))
 
-# Visualize comparison
-## combine data
-d_rosetta <- tidyr::gather(d_rosetta, key = "key", value = "rosetta", a, b, c)
-complete_fscores <- tidyr::gather(complete_fscores, key = "key", value = "complete", a, b, c)
-d_plot <- cbind(d_rosetta, complete_fscores["complete"])
-## plot
-ggplot(d_plot, aes(x = complete, y = rosetta, color = key)) + 
-  geom_point() + 
-  labs(
-    x = "Complete data factor scores",
-    y = "Rosetta factor scores",
-    color = "Factor"
-  )
-## correlation table
-table <- d_plot %>%
-  dplyr::group_by(key) %>%
-  dplyr::summarize(cor = cor(rosetta, complete, method = "pearson"))
-knitr::kable(table, caption = "correlation table")
+# combine rosetta results (for the complete) into a single dataset
+d_rosetta_complete <- as.data.frame(do.call("rbind", d_rosetta_complete))
+
+# create a data.frame of results for plotting
+plot_df = data.frame("factor_scores_incomplete_data" = c(d_rosetta$a,
+                                                         d_rosetta$b,
+                                                         d_rosetta$c),
+                     "factor_scores_complete_data" = c(d_rosetta_complete$a,
+                                                       d_rosetta_complete$b,
+                                                       d_rosetta_complete$c),
+                     "latent_variable" = as.factor(c(rep("a",length(d_rosetta_complete$a)), rep("b",length(d_rosetta_complete$a)),rep("c",length(d_rosetta_complete$a)))))
+
+ggplot(plot_df) + geom_point(aes(x = factor_scores_incomplete_data,
+                               y = factor_scores_complete_data))+facet_grid(rows="latent_variable")
+
 ```
+

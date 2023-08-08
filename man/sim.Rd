@@ -5,8 +5,8 @@
 \title{Simulate data for rosetta}
 \usage{
 sim(
-  loading = matrix(c(0.9, 0.8, 0.7, rep(0, 9), 0.6, 0.7, 0.8, rep(0, 9), 0.8, 0.9,
-    0.6), ncol = 3),
+  loading = matrix(c(0.9, 0.8, 0.7, rep(0, 9), 0.6, 0.7, 0.8, rep(0, 9), 0.8, 0.9, 0.6),
+    ncol = 3),
   correlation = matrix(c(1, 0.2, 0.4, 0.2, 1, 0.3, 0.4, 0.3, 1), ncol = 3),
   factor_structure = list(a = c(1, 2, 3), b = c(1, 2, 3), c = c(1, 2, 3)),
   n_rows = 1000,

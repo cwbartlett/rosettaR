@@ -98,21 +98,34 @@ sim_complete <- function(loading, correlation, factor_structure, n_rows, n_datas
 
   names(sim_data) <- unlist(lapply(names(factor_structure), function(x) {paste(x, factor_structure[[x]], sep = "_")}))
 
+
   split_grouping <- cut(seq(1, nrow(sim_data)), breaks = n_datasets, labels = FALSE)
   sim_data_list <- split(x = sim_data, f = split_grouping)
+
+  # breaks if there are more datasets than domains
+  n_data_set = length( sim_data_list)
+  for(i in seq_along(sim_data_list)) {
+    n_rows = nrow(sim_data_list[[i]])
+    sim_data_list[[i]]$ID = paste0("dataset_",i,"_row_",1:n_rows)
+  }
+
   sim_data_list
 }
 
 # For each independent dataset, set a variable within each domain to missing
 sim_missing <- function(complete, factor_structure) {
+
   missing <- complete
 
   column_names <- lapply(names(factor_structure), function(x) {paste(x, factor_structure[[x]], sep = "_")})
+
   remove_var <- lapply(column_names, sample)
 
   # breaks if there are more datasets than domains
+  n_data_set = length(missing)
   for(i in seq_along(missing)) {
     missing[[i]][sapply(remove_var, "[[", i)] <- NULL
+    n_rows = nrow(missing[[i]])
   }
 
   missing
