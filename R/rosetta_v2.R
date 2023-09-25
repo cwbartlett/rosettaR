@@ -117,16 +117,16 @@ rosetta = function(d,
       frob_norm = sum(matt_diff^2, na.rm = TRUE)^(1/2)
       frob_norm
     }
+    data = dplyr::bind_rows(d)
 
-    # data = dplyr::bind_rows(d)
-    # if(!is.null(id_colnames))data[,-which(colnames(data) %in% id_colnames)]
+    if(!is.null(id_colnames))data <- data[,-which(colnames(data) %in% id_colnames)]
     # head(data)
 
-    # combined data (now we want NAs in columns)
-    d_bind = rosetta_bind(d)
+    # # combined data (now we want NAs in columns)
+    # d_bind = rosetta_bind(d)
 
     ## observed pairwise complete covariance matrix
-    cov_mat = get_obs_cov(d_bind,
+    cov_mat = get_obs_cov(data,
                           id_colnames)
 
     cor_mat = stats::cov2cor(cov_mat)

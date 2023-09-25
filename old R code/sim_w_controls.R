@@ -30,26 +30,26 @@
 #' missing_data <- d_sim$missing
 #'
 sim <- function(
-  loading = matrix(
-    c(.9, .8, .7, rep(0, 9),
-      .6, .7, .8, rep(0, 9),
-      .8, .9, .6),
-    ncol = 3
-  ),
-  correlation = matrix(
-    c(1, .2, .4,
-      .2, 1, .3,
-      .4, .3, 1),
-    ncol = 3
-  ),
-  factor_structure = list(
-    a = c(1, 2, 3),
-    b = c(1, 2, 3),
-    c = c(1, 2, 3)
-  ),
-  n_rows = 1000,
-  n_datasets = 3,
-  seed = NULL
+    loading = matrix(
+      c(.9, .8, .7, rep(0, 9),
+        .6, .7, .8, rep(0, 9),
+        .8, .9, .6),
+      ncol = 3
+    ),
+    correlation = matrix(
+      c(1, .2, .4,
+        .2, 1, .3,
+        .4, .3, 1),
+      ncol = 3
+    ),
+    factor_structure = list(
+      a = c(1, 2, 3),
+      b = c(1, 2, 3),
+      c = c(1, 2, 3)
+    ),
+    n_rows = 100,
+    n_datasets = 3,
+    seed = NULL
 ) {
   complete_data <- sim_complete(
     loading = loading,
@@ -78,7 +78,14 @@ sim <- function(
 # helper functions
 #-------------------------------------------------------------------------------
 # simulate a complete dataset based on specified factor loadings and correlation structure.
-sim_complete <- function(loading, correlation, factor_structure, n_rows, n_datasets, seed = NULL) {
+sim_complete <- function(loading,
+                         correlation,
+                         factor_structure,
+                         n_rows,
+                         n_datasets,
+                         theta = .5 ,
+                         seed = NULL) {
+
   if(!is.null(seed)) {
     set.seed(seed)
   }
@@ -88,13 +95,50 @@ sim_complete <- function(loading, correlation, factor_structure, n_rows, n_datas
     Phi = correlation
   )$model
 
-  sim_data <- as.data.frame(
-    MASS::mvrnorm(
-      n = n_rows * n_datasets,
-      mu = rep(0, nrow(true_correlation)),
-      Sigma = true_correlation
-    )
-  )
+  cvs = matrix(rbinom(n = n_rows * n_datasets,
+                      size = 1,
+                      prob = theta),ncol)
+
+  cv_idx=1
+  beta = matrix(rnorm(nrow(true_correlation),10,1),
+                ncol=1,
+                nrow =
+                  nrow(true_correlation))
+
+  for(r in 1: n_rows){
+    for(d in 1:n_datasets){
+
+      if(cv_idx==1){
+
+        sim_data <- as.data.frame(t(MASS::mvrnorm(
+          n = 1,
+          mu = rep(0,nrow(true_correlation)) + beta %*% cvs[cv_idx] ,
+          Sigma = true_correlation
+        )))
+
+      } else {
+
+        temp <- as.data.frame(t(MASS::mvrnorm(
+          n = 1,
+          mu = rep(0,nrow(true_correlation)) + beta %*% cvs[cv_idx] ,
+          Sigma = true_correlation
+        )))
+
+        sim_data = rbind(sim_data,temp)
+
+      }
+
+      cv_idx = cv_idx + 1
+    }
+  }
+
+  #   sim_data <- as.data.frame(
+  #     MASS::mvrnorm(
+  #       n = n_rows * n_datasets,
+  #       mu = rep(0, nrow(true_correlation)) ,
+  #       Sigma = true_correlation
+  #     )
+  #   )
 
   names(sim_data) <- unlist(lapply(names(factor_structure), function(x) {paste(x, factor_structure[[x]], sep = "_")}))
 

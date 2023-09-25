@@ -10,7 +10,7 @@ devtools::install_github("cwbartlett/rosettaR")
 ## Examples
 
 ```{r}
-library(rosetta)
+library(rosettaR)
 
 # simulate data
 d <- sim(seed = 100)

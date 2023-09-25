@@ -1,4 +1,4 @@
-Package: rosetta
+Package: rosettaR
 Title: Use Latent Traits to Concatenate Imperfectly Matched Datasets
 Version: 0.2
 Authors@R: c(
