@@ -20,12 +20,16 @@ Imports:
     lavaan,
     DoE.wrapper,
     stats,
-    matrixcalc
+    matrixcalc,
+    optimParallel,
+    parallel,
+    randtoolbox
 Suggests:
     knitr,
     rmarkdown,
     tidyr,
     ggplot2
+
 VignetteBuilder: knitr
 Encoding: UTF-8
 RoxygenNote: 7.2.3

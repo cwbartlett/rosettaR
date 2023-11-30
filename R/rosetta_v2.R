@@ -10,7 +10,9 @@
 #' Each element is a character vector of feature names for the corresponding factor.
 #'
 #' @return List of dataframes which contain factor scores.
-#'
+#' @import optimParallel
+#' @import parallel
+#' @impoartFrom randtoolbox sobol
 #' @import lavaan
 #' @importFrom matrixcalc is.positive.definite
 #' @importFrom DoE.wrapper lhs.design
@@ -57,7 +59,8 @@
 rosetta = function(d,
                    factor_structure,
                    missing_corr = 'normal',
-                   id_colnames = NULL) {
+                   id_colnames = NULL,
+                   number_cores = 1) {
   # Check arguments
   if(!all(unlist(lapply(d, is.data.frame)))) {
     stop("Check the 'd' argument in function rosetta::rosetta(). 'd' needs to be a list of dataframes.")
@@ -72,6 +75,19 @@ rosetta = function(d,
   for(i in seq_along(d)) {
     d[[i]] = Filter(function(x)!all(is.na(x)), d[[i]])
   }
+
+  # check all manifest vars in model are in the dataset
+  vars_in_model = (factor_structure |> unlist())
+  vars_in_model_test = rep(0,length(vars_in_model))
+  for(i in seq_along(d)) {
+    vars_in_model_test = vars_in_model_test +
+      as.integer(vars_in_model %in% colnames(d[[i]]))
+  }
+  if(!all(vars_in_model_test > 0)){
+    stop("manifest variables declared in factor structure but are not in data: ",
+         paste(vars_in_model[vars_in_model_test==0], collapse = ", "))
+  }
+
 
   message(missing_corr)
 
@@ -94,12 +110,12 @@ rosetta = function(d,
                           id_colnames)
 
   } else if (all(missing_corr=='missing')){
-    message("Using Steve's Algorithm")
+    message("Missing elements in covariance matrix. Using Steve's Matrix Imputation Algorithm")
     #===============================================================================
     # Algorithm for filling in missing correlations (S Buyske)
     #===============================================================================
     # 1. Define function to calculate frobenius norm of difference matrix.
-    sm = function (mat, par) {
+    sm = function (par,mat) {
       # Store original correlation matrix and matrix that can be modified
       mat_par = mat
       # Get the missing value locations from the upper triangle
@@ -107,23 +123,29 @@ rosetta = function(d,
       index_na = which(is.na(mat_par), arr.ind = TRUE)
       # Restore modified matrix and assign values
       mat_par = mat
-      for (i in 1:nrow(index_na)) {
-        mat_par[index_na[i,1], index_na[i,2]] = par[i]
-        mat_par[index_na[i,2], index_na[i,1]] = par[i]
-      }
+
+      # for (i in 1:nrow(index_na)) {
+      #   mat_par[index_na[i,1], index_na[i,2]] = par[i]
+      #   mat_par[index_na[i,2], index_na[i,1]] = par[i]
+      # }
+
+      # vectorizing so it's more slightly more efficient
+      mat_par[index_na[,1], index_na[,2]] <- par
+      mat_par[index_na[,2], index_na[,1]] <- par
+
       # Difference between original matrix and nearest positive definite chosen matrix
-      matt_diff = mat - Matrix::nearPD(mat_par, corr = TRUE, maxit = 500, conv.norm.type="F")[["mat"]]
+      matt_diff = mat - Matrix::nearPD(mat_par, corr = FALSE, maxit = 500, conv.norm.type="F")[["mat"]]
       # Calculate Frobenius norm of difference matrix
       frob_norm = sum(matt_diff^2, na.rm = TRUE)^(1/2)
-      frob_norm
+      return(frob_norm)
     }
-    data = dplyr::bind_rows(d)
 
+    data = dplyr::bind_rows(d)
     if(!is.null(id_colnames))data <- data[,-which(colnames(data) %in% id_colnames)]
     # head(data)
-
-    # # combined data (now we want NAs in columns)
-    # d_bind = rosetta_bind(d)
+#
+#     # # combined data (now we want NAs in columns)
+#     d_bind = rosetta_bind(d)
 
     ## observed pairwise complete covariance matrix
     cov_mat = get_obs_cov(data,
@@ -131,21 +153,39 @@ rosetta = function(d,
 
     cor_mat = stats::cov2cor(cov_mat)
 
+    message("choosing initial values...")
     # initial values
     n_initial = length(which(is.na(cov_mat)))/2
-    par = DoE.wrapper::lhs.design(n_initial, nfactors = 1, default.levels = c(-1, 1))[[1]]
 
-    # 2. Find values which minimize the frobenius norm
-    val = stats::optim(
-      par = par,
-      mat = cov_mat,
-      fn = sm,
-      lower = -1,
-      upper = 1,
-      method = "L-BFGS-B"
-    )
-    val[["par"]]
+    if(number_cores>1){
+      par <- randtoolbox::sobol(n_initial)*2-1
+      message("optimizing...")
+      if(parallel::detectCores()<number_cores){
+        stop("More cores requested for parallel processing than avaiable")
+      }
+      cl <- parallel::makeCluster(number_cores) # set the number of processor cores
+      parallel::setDefaultCluster(cl=cl) # set 'cl' as default cluster
+      val = optimParallel::optimParallel(
+        par = par,
+        mat = cov_mat,
+        fn = sm,
+        lower = -1,
+        upper = 1,
+        method = "L-BFGS-B")
+      parallel::stopCluster(cl)
+    } else {
+      par = randtoolbox::sobol(n_initial)*2-1
+      # 2. Find values which minimize the frobenius norm
+      val = stats::optim(
+        par = par,
+        mat = cov_mat,
+        fn = sm,
+        lower = -1,
+        upper = 1,
+        method = "L-BFGS-B"
+      )
 
+    }
     # 3. Put the estimated values back in original matrix
     #    There should be a better way...
     mat_optim = cov_mat
@@ -156,8 +196,13 @@ rosetta = function(d,
       mat_optim[index_na[i,1], index_na[i,2]] = val[["par"]][i]
       mat_optim[index_na[i,2], index_na[i,1]] = val[["par"]][i]
     }
-    matrixcalc::is.positive.definite(mat_optim)
-    obs_cov = mat_optim
+
+    if(!matrixcalc::is.positive.definite(mat_optim)){
+      warning("after steve's matrix imputation algorithm, cov matrix is not positive semidefinite, attempting to coerce to positive semidefinite matrix")
+      obs_cov = Matrix::nearPD(mat_optim, corr = FALSE, maxit = 500, conv.norm.type="F")$mat |> as.matrix()
+    } else{
+      obs_cov = mat_optim
+    }
   }
 
   # get number of rows per data set
