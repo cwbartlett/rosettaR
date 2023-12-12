@@ -198,8 +198,8 @@ rosetta = function(d,
     }
 
     mat_optim_cov = diag(sqrt(cov_mat)) %*%  mat_optim %*% sqrt(diag(cov_mat))
-    colnames(mat_optim_cov) <- colnames(mat_optim)
-    rownames(mat_optim_cov) <- rownames(mat_optim)
+    colnames(mat_optim_cov) <- colnames(cor_mat)
+    rownames(mat_optim_cov) <- rownames(cor_mat)
     if(!matrixcalc::is.positive.definite(mat_optim_cov)){
       warning("after steve's matrix imputation algorithm, cov matrix is not positive semidefinite, attempting to coerce to positive semidefinite matrix")
       obs_cov = Matrix::nearPD(mat_optim_cov, corr = FALSE, maxit = 500, conv.norm.type="F")$mat |> as.matrix()
