@@ -143,9 +143,9 @@ rosetta = function(d,
     data = dplyr::bind_rows(d)
     if(!is.null(id_colnames))data <- data[,-which(colnames(data) %in% id_colnames)]
     # head(data)
-#
-#     # # combined data (now we want NAs in columns)
-#     d_bind = rosetta_bind(d)
+    #
+    #     # # combined data (now we want NAs in columns)
+    #     d_bind = rosetta_bind(d)
 
     ## observed pairwise complete covariance matrix
     cov_mat = get_obs_cov(data)
@@ -198,7 +198,8 @@ rosetta = function(d,
     }
 
     mat_optim_cov = diag(sqrt(cov_mat)) %*%  mat_optim %*% sqrt(diag(cov_mat))
-
+    colnames(mat_optim_cov) <- colnames(mat_optim)
+    rownames(mat_optim_cov) <- rownames(mat_optim)
     if(!matrixcalc::is.positive.definite(mat_optim_cov)){
       warning("after steve's matrix imputation algorithm, cov matrix is not positive semidefinite, attempting to coerce to positive semidefinite matrix")
       obs_cov = Matrix::nearPD(mat_optim_cov, corr = FALSE, maxit = 500, conv.norm.type="F")$mat |> as.matrix()
