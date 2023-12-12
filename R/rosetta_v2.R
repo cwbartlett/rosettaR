@@ -134,7 +134,7 @@ rosetta = function(d,
       mat_par[index_na[,2], index_na[,1]] <- par
 
       # Difference between original matrix and nearest positive definite chosen matrix
-      matt_diff = mat - Matrix::nearPD(mat_par, corr = FALSE, maxit = 500, conv.norm.type="F")[["mat"]]
+      matt_diff = mat - Matrix::nearPD(mat_par, corr = TRUE, maxit = 500, conv.norm.type="F")[["mat"]]
       # Calculate Frobenius norm of difference matrix
       frob_norm = sum(matt_diff^2, na.rm = TRUE)^(1/2)
       return(frob_norm)
@@ -166,7 +166,7 @@ rosetta = function(d,
       parallel::setDefaultCluster(cl=cl) # set 'cl' as default cluster
       val = optimParallel::optimParallel(
         par = par,
-        mat = cov_mat,
+        mat = cor_mat,
         fn = sm,
         lower = -1,
         upper = 1,
@@ -178,7 +178,7 @@ rosetta = function(d,
       # 2. Find values which minimize the frobenius norm
       val = stats::optim(
         par = par,
-        mat = cov_mat,
+        mat = cor_mat,
         fn = sm,
         lower = -1,
         upper = 1,
@@ -188,20 +188,22 @@ rosetta = function(d,
     }
     # 3. Put the estimated values back in original matrix
     #    There should be a better way...
-    mat_optim = cov_mat
+    mat_optim = cor_mat
     mat_optim[lower.tri(mat_optim)] = 0
     index_na = which(is.na(mat_optim), arr.ind = TRUE)
-    mat_optim = cov_mat
+    mat_optim = cor_mat
     for (i in 1:nrow(index_na)) {
       mat_optim[index_na[i,1], index_na[i,2]] = val[["par"]][i]
       mat_optim[index_na[i,2], index_na[i,1]] = val[["par"]][i]
     }
 
-    if(!matrixcalc::is.positive.definite(mat_optim)){
+    mat_optim_cov = diag(sqrt(cov_mat)) %*%  mat_optim %*% sqrt(diag(cov_mat))
+
+    if(!matrixcalc::is.positive.definite(mat_optim_cov)){
       warning("after steve's matrix imputation algorithm, cov matrix is not positive semidefinite, attempting to coerce to positive semidefinite matrix")
-      obs_cov = Matrix::nearPD(mat_optim, corr = FALSE, maxit = 500, conv.norm.type="F")$mat |> as.matrix()
+      obs_cov = Matrix::nearPD(mat_optim_cov, corr = FALSE, maxit = 500, conv.norm.type="F")$mat |> as.matrix()
     } else {
-      obs_cov = mat_optim
+      obs_cov = mat_optim_cov
     }
   }
 
