@@ -148,8 +148,7 @@ rosetta = function(d,
 #     d_bind = rosetta_bind(d)
 
     ## observed pairwise complete covariance matrix
-    cov_mat = get_obs_cov(data,
-                          id_colnames)
+    cov_mat = get_obs_cov(data)
 
     cor_mat = stats::cov2cor(cov_mat)
 
@@ -174,6 +173,7 @@ rosetta = function(d,
         method = "L-BFGS-B")
       parallel::stopCluster(cl)
     } else {
+
       par = randtoolbox::sobol(n_initial)*2-1
       # 2. Find values which minimize the frobenius norm
       val = stats::optim(
@@ -200,7 +200,7 @@ rosetta = function(d,
     if(!matrixcalc::is.positive.definite(mat_optim)){
       warning("after steve's matrix imputation algorithm, cov matrix is not positive semidefinite, attempting to coerce to positive semidefinite matrix")
       obs_cov = Matrix::nearPD(mat_optim, corr = FALSE, maxit = 500, conv.norm.type="F")$mat |> as.matrix()
-    } else{
+    } else {
       obs_cov = mat_optim
     }
   }
