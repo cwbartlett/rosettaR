@@ -175,6 +175,7 @@ rosetta = function(d,
     } else {
       message("optimizing...")
       par = randtoolbox::sobol(n_initial)*2-1
+      par = (randtoolbox::sobol(n_initial)*2-1)*.01
       # 2. Find values which minimize the frobenius norm
       val = stats::optim(
         par = par,
@@ -184,6 +185,11 @@ rosetta = function(d,
         upper = 1,
         method = "L-BFGS-B"
       )
+      if (val$convergence == 0) {
+        message("Optimization for matrix imputation successful!")
+      } else {
+        warning("Optimization for matrix imputation failed to converge.")
+      }
 
     }
     # 3. Put the estimated values back in original matrix
