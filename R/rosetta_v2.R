@@ -173,7 +173,7 @@ rosetta = function(d,
         method = "L-BFGS-B")
       parallel::stopCluster(cl)
     } else {
-
+      message("optimizing...")
       par = randtoolbox::sobol(n_initial)*2-1
       # 2. Find values which minimize the frobenius norm
       val = stats::optim(
