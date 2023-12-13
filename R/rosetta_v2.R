@@ -134,7 +134,7 @@ rosetta = function(d,
       mat_par[index_na[,2], index_na[,1]] <- par
 
       # Difference between original matrix and nearest positive definite chosen matrix
-      matt_diff = mat - Matrix::nearPD(mat_par, corr = FALSE, maxit = 500, conv.norm.type="F")[["mat"]]
+      matt_diff = mat - Matrix::nearPD(mat_par, corr = TRUE, maxit = 500, conv.norm.type="F")[["mat"]]
       # Calculate Frobenius norm of difference matrix
       frob_norm = sum(matt_diff^2, na.rm = TRUE)^(1/2)
       return(frob_norm)
@@ -143,9 +143,9 @@ rosetta = function(d,
     data = dplyr::bind_rows(d)
     if(!is.null(id_colnames))data <- data[,-which(colnames(data) %in% id_colnames)]
     # head(data)
-#
-#     # # combined data (now we want NAs in columns)
-#     d_bind = rosetta_bind(d)
+    #
+    #     # # combined data (now we want NAs in columns)
+    #     d_bind = rosetta_bind(d)
 
     ## observed pairwise complete covariance matrix
     cov_mat = get_obs_cov(data)
@@ -166,42 +166,54 @@ rosetta = function(d,
       parallel::setDefaultCluster(cl=cl) # set 'cl' as default cluster
       val = optimParallel::optimParallel(
         par = par,
-        mat = cov_mat,
+        mat = cor_mat,
         fn = sm,
         lower = -1,
         upper = 1,
         method = "L-BFGS-B")
       parallel::stopCluster(cl)
     } else {
-
+      message("optimizing...")
       par = randtoolbox::sobol(n_initial)*2-1
+      # par = (randtoolbox::sobol(n_initial)*2-1)*.01
       # 2. Find values which minimize the frobenius norm
       val = stats::optim(
         par = par,
-        mat = cov_mat,
+        mat = cor_mat,
         fn = sm,
         lower = -1,
         upper = 1,
         method = "L-BFGS-B"
       )
+      if (val$convergence == 0) {
+        message("Optimization for matrix imputation successful!")
+      } else {
+        warning("Optimization for matrix imputation failed to converge.")
+      }
 
     }
     # 3. Put the estimated values back in original matrix
     #    There should be a better way...
-    mat_optim = cov_mat
+    mat_optim = cor_mat
     mat_optim[lower.tri(mat_optim)] = 0
     index_na = which(is.na(mat_optim), arr.ind = TRUE)
-    mat_optim = cov_mat
+    mat_optim = cor_mat
     for (i in 1:nrow(index_na)) {
       mat_optim[index_na[i,1], index_na[i,2]] = val[["par"]][i]
       mat_optim[index_na[i,2], index_na[i,1]] = val[["par"]][i]
     }
 
-    if(!matrixcalc::is.positive.definite(mat_optim)){
+    mat_optim_cov = diag(sqrt(diag(cov_mat))) %*%
+      mat_optim %*%
+      diag(sqrt(diag(cov_mat)))
+
+    colnames(mat_optim_cov) <- colnames(cor_mat)
+    rownames(mat_optim_cov) <- rownames(cor_mat)
+    if(! (all(eigen(mat_optim_cov)$values > 0) & isSymmetric(mat_optim_cov))){
       warning("after steve's matrix imputation algorithm, cov matrix is not positive semidefinite, attempting to coerce to positive semidefinite matrix")
-      obs_cov = Matrix::nearPD(mat_optim, corr = FALSE, maxit = 500, conv.norm.type="F")$mat |> as.matrix()
+      obs_cov = Matrix::nearPD(mat_optim_cov, corr = FALSE, maxit = 50000, conv.norm.type="F")$mat |> as.matrix()
     } else {
-      obs_cov = mat_optim
+      obs_cov = mat_optim_cov
     }
   }
 
