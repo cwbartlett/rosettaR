@@ -174,8 +174,10 @@ rosetta = function(d,
       parallel::stopCluster(cl)
     } else {
       message("optimizing...")
-      par = randtoolbox::sobol(n_initial)*2-1
-      # par = (randtoolbox::sobol(n_initial)*2-1)*.01
+      # par = randtoolbox::sobol(n_initial)*2-1
+      par = runif(n_initial,-1e-4,1e-4)
+
+
       # 2. Find values which minimize the frobenius norm
       val = stats::optim(
         par = par,
@@ -186,7 +188,7 @@ rosetta = function(d,
         method = "L-BFGS-B"
       )
       if (val$convergence == 0) {
-        message("Optimization for matrix imputation successful!")
+        message("Optimization for matrix imputation successfully converged!")
       } else {
         warning("Optimization for matrix imputation failed to converge.")
       }
@@ -209,6 +211,7 @@ rosetta = function(d,
 
     colnames(mat_optim_cov) <- colnames(cor_mat)
     rownames(mat_optim_cov) <- rownames(cor_mat)
+
     if(! (all(eigen(mat_optim_cov)$values > 0) & isSymmetric(mat_optim_cov))){
       warning("after steve's matrix imputation algorithm, cov matrix is not positive semidefinite, attempting to coerce to positive semidefinite matrix")
       obs_cov = Matrix::nearPD(mat_optim_cov, corr = FALSE, maxit = 50000, conv.norm.type="F")$mat |> as.matrix()
