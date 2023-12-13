@@ -175,7 +175,7 @@ rosetta = function(d,
     } else {
       message("optimizing...")
       par = randtoolbox::sobol(n_initial)*2-1
-      par = (randtoolbox::sobol(n_initial)*2-1)*.01
+      # par = (randtoolbox::sobol(n_initial)*2-1)*.01
       # 2. Find values which minimize the frobenius norm
       val = stats::optim(
         par = par,
