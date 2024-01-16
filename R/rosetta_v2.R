@@ -8,6 +8,8 @@
 #' @param missing_corr 'normal'(default) or 'missing'. 'missing' tries to impute unobserved pairwise correlations
 #' @param id_colnames optional names  of the columns that uniquely identify each row within a dataset (default is NULL)
 #' Each element is a character vector of feature names for the corresponding factor.
+#' @param matrix_type 'pearson' for estimating parameters from the pearson correlation matrix, 'covariance' for the covariance matrix.
+#' @param standarize_factor_variance TRUE or FALSE
 #'
 #' @return List of dataframes which contain factor scores.
 #' @import optimParallel
@@ -60,7 +62,10 @@ rosetta = function(d,
                    factor_structure,
                    missing_corr = 'normal',
                    id_colnames = NULL,
-                   number_cores = 1) {
+                   number_cores = 1,
+                   matrix_type=c("covariance","pearson")[2],
+                   standarize_factor_variance=c(TRUE,FALSE)[2]
+                   ) {
   # Check arguments
   if(!all(unlist(lapply(d, is.data.frame)))) {
     stop("Check the 'd' argument in function rosetta::rosetta(). 'd' needs to be a list of dataframes.")
@@ -107,7 +112,7 @@ rosetta = function(d,
 
     ## observed pairwise complete covariance matrix
     obs_cov = get_obs_cov(d_bind,
-                          id_colnames)
+                          id_colnames,type=matrix_type)
 
   } else if (all(missing_corr=='missing')){
     message("Missing elements in covariance matrix. Using Steve's Matrix Imputation Algorithm")
@@ -148,7 +153,7 @@ rosetta = function(d,
     #     d_bind = rosetta_bind(d)
 
     ## observed pairwise complete covariance matrix
-    cov_mat = get_obs_cov(data)
+    cov_mat = get_obs_cov(data,type=matrix_type)
 
     cor_mat = stats::cov2cor(cov_mat)
 
@@ -229,9 +234,9 @@ rosetta = function(d,
   ## the overall lavaan fit
   unconstrained_fit =
     lavaan::cfa(model = lavaan_model,
-                sample.cov = obs_cov,
+                sample.cov = obs_cov ,
                 sample.nobs = n_data_mean,
-                std.lv = TRUE)
+                std.lv = standarize_factor_variance)
 
 
   ## factor covariance estimates
@@ -250,7 +255,7 @@ rosetta = function(d,
                             unconstrained_fit)
 
     # observed pairwise complete covariance matrix
-    obs_cov = get_obs_cov(x,id_colnames)
+    obs_cov = get_obs_cov(x,id_colnames,type=matrix_type)
     tmp_unlist = unlist(constrained_struc,recursive = TRUE)
     obs_cov_subset = obs_cov[tmp_unlist,tmp_unlist]
 
@@ -260,7 +265,7 @@ rosetta = function(d,
       lavaan::cfa(model = lavaan_model_constrained,
                   sample.cov = obs_cov,
                   sample.nobs = n_data_mean,
-                  std.lv = TRUE)
+                  std.lv = standarize_factor_variance)
 
     # model results
     constrained_factor_scores =
@@ -350,12 +355,17 @@ get_lavaan_model_text = function(factor_structure,lavaan_obj=NULL) {
 }
 
 # Returns the observed pairwise complete covariance matrix.
-get_obs_cov = function(d, id_col = NULL) {
+get_obs_cov = function(d, id_col = NULL,type) {
   d = d[, colSums(is.na(d)) < nrow(d)] # Remove columns which only contain NA
 
   if(!is.null(id_col))d = d[, -which(colnames(d) %in% id_col)]
-  obs_cov = stats::cov(d, method = "pearson", use = "pairwise.complete.obs")
-  obs_cov
+  if(type=="covariance"){
+    obs_cov = stats::cov(d, method = "pearson", use = "pairwise.complete.obs")
+  }
+  if(type=="pearson"){
+    obs_cov = stats::cov(d, method = "pearson", use = "pairwise.complete.obs")
+  }
+  return(obs_cov)
 }
 
 # Extract covariance estimates from lavaan model fit
