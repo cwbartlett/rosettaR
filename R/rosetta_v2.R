@@ -112,7 +112,8 @@ rosetta = function(d,
 
     ## observed pairwise complete covariance matrix
     obs_cov = get_obs_cov(d_bind,
-                          id_colnames,type=matrix_type)
+                          id_colnames,
+                          type=matrix_type)
 
   } else if (all(missing_corr=='missing')){
     message("Missing elements in covariance matrix. Using Steve's Matrix Imputation Algorithm")
@@ -181,7 +182,6 @@ rosetta = function(d,
       message("optimizing...")
       # par = randtoolbox::sobol(n_initial)*2-1
       par = runif(n_initial,-1e-4,1e-4)
-
 
       # 2. Find values which minimize the frobenius norm
       val = stats::optim(
@@ -363,7 +363,7 @@ get_obs_cov = function(d, id_col = NULL,type) {
     obs_cov = stats::cov(d, method = "pearson", use = "pairwise.complete.obs")
   }
   if(type=="pearson"){
-    obs_cov = stats::cov(d, method = "pearson", use = "pairwise.complete.obs")
+    obs_cov = stats::cor(d, method = "pearson", use = "pairwise.complete.obs")
   }
   return(obs_cov)
 }
