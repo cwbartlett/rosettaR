@@ -217,8 +217,8 @@ rosetta = function(d,
     colnames(mat_optim_cov) <- colnames(cor_mat)
     rownames(mat_optim_cov) <- rownames(cor_mat)
 
-    if(! (all(eigen(mat_optim_cov)$values > 0) & isSymmetric(mat_optim_cov))){
-      warning("after steve's matrix imputation algorithm, cov matrix is not positive semidefinite, attempting to coerce to positive semidefinite matrix")
+    if(! (all(eigen(mat_optim_cov)$values > 1e-6) & isSymmetric(mat_optim_cov))){
+      warning("after steve's matrix imputation algorithm, cov/cor matrix is not positive semidefinite, attempting to coerce to positive semidefinite matrix")
       obs_cov = Matrix::nearPD(mat_optim_cov, corr = ifelse(matrix_type=="pearson",TRUE,FALSE), maxit = 50000, conv.norm.type="F")$mat |> as.matrix()
     } else {
       obs_cov = mat_optim_cov
@@ -268,16 +268,39 @@ rosetta = function(d,
                   sample.cov = obs_cov,
                   sample.nobs = n_data_mean,
                   std.lv = standarize_factor_variance)
-    x_for_scores = x
 
+
+    if(matrix_type ==  "pearson"){
+      # calculate mean and sd to normalize across all data sets (preserving difference in mean/sd across data sets
+
+      mus = data |> colMeans(na.rm = TRUE)
+      names(mus) <- colnames(data)
+
+      sigma = data |> apply(2,sd,na.rm = TRUE)
+      names(sigma) <- colnames(data)
+
+      if( !(all(is.finite(sigma)) & all(sigma>0)) ){
+        warning(paste0("WARNING: variance is not postive & finite for: ", names(sigma[is.finite(sigma)])," across data sets. Program may fail or operate in unexpected ways"))
+      }
+      if(!all(is.finite(mus))) {
+        warning(paste0("WARNING: mean is not finite for: ", names(mus[is.finite(mus)])," across data sets. Program may fail or operate in unexpected ways"))
+      }
+    }
+
+    # now normalize x using the above calculated means and sds
+    x_for_scores = x
     if(!is.null(id_colnames)){
       x_for_scores =  x_for_scores |> select(-all_of(c(id_colnames)))
     }
-
     if(matrix_type ==  "pearson"){
-      x_for_scores =  x_for_scores |> scale()
-
+      for(j in 1:ncol(x_for_scores)){
+        x_for_scores[,j] = (x_for_scores[,j] -
+                              mus[which(names(mus) == (colnames(x_for_scores)[j]) )])/
+          sigma[which(names(sigma) == (colnames(x_for_scores)[j]) )]
+      }
     }
+
+
     constrained_factor_scores =
       as.data.frame(lavaan::lavPredict(constrained_fit, newdata = x_for_scores))
 
