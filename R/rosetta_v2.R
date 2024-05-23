@@ -65,7 +65,7 @@ rosetta = function(d,
                    number_cores = 1,
                    matrix_type=c("covariance","pearson")[2],
                    standarize_factor_variance=c(TRUE,FALSE)[2]
-                   ) {
+) {
   # Check arguments
   if(!all(unlist(lapply(d, is.data.frame)))) {
     stop("Check the 'd' argument in function rosetta::rosetta(). 'd' needs to be a list of dataframes.")
@@ -219,7 +219,7 @@ rosetta = function(d,
 
     if(! (all(eigen(mat_optim_cov)$values > 0) & isSymmetric(mat_optim_cov))){
       warning("after steve's matrix imputation algorithm, cov matrix is not positive semidefinite, attempting to coerce to positive semidefinite matrix")
-      obs_cov = Matrix::nearPD(mat_optim_cov, corr = FALSE, maxit = 50000, conv.norm.type="F")$mat |> as.matrix()
+      obs_cov = Matrix::nearPD(mat_optim_cov, corr = ifelse(matrix_type=="pearson",TRUE,FALSE), maxit = 50000, conv.norm.type="F")$mat |> as.matrix()
     } else {
       obs_cov = mat_optim_cov
     }
@@ -245,6 +245,8 @@ rosetta = function(d,
 
   # step 2. constrained model
   constrained_fit_list = lapply(d, function(x) {
+
+
     constrained_struc = lapply(factor_structure, function(y) {
       intersect(names(x), y)
     })
@@ -266,14 +268,21 @@ rosetta = function(d,
                   sample.cov = obs_cov,
                   sample.nobs = n_data_mean,
                   std.lv = standarize_factor_variance)
+    x_for_scores = x
 
-    # model results
+    if(!is.null(id_colnames)){
+      x_for_scores =  x_for_scores |> select(-all_of(c(id_colnames)))
+    }
+
+    if(matrix_type ==  "pearson"){
+      x_for_scores =  x_for_scores |> scale()
+
+    }
     constrained_factor_scores =
-      as.data.frame(lavaan::lavPredict(constrained_fit, newdata = x))
+      as.data.frame(lavaan::lavPredict(constrained_fit, newdata = x_for_scores))
 
     # select ID rows
     if(!is.null(id_colnames)){
-
       id_df = as.data.frame(x[,id_colnames])
       colnames(id_df) <- id_colnames
 
@@ -360,10 +369,14 @@ get_obs_cov = function(d, id_col = NULL,type) {
 
   if(!is.null(id_col))d = d[, -which(colnames(d) %in% id_col)]
   if(type=="covariance"){
-    obs_cov = stats::cov(d, method = "pearson", use = "pairwise.complete.obs")
+    obs_cov = stats::cov(d,
+                         method = "pearson",
+                         use = "pairwise.complete.obs")
   }
   if(type=="pearson"){
-    obs_cov = stats::cor(d, method = "pearson", use = "pairwise.complete.obs")
+    obs_cov = stats::cor(d,
+                         method = "pearson",
+                         use = "pairwise.complete.obs")
   }
   return(obs_cov)
 }
