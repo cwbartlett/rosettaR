@@ -8,6 +8,8 @@
 #' @param missing_corr 'normal'(default) or 'missing'. 'missing' tries to impute unobserved pairwise correlations
 #' @param id_colnames optional names  of the columns that uniquely identify each row within a dataset (default is NULL)
 #' Each element is a character vector of feature names for the corresponding factor.
+#' @param matrix_type 'pearson' for estimating parameters from the pearson correlation matrix, 'covariance' for the covariance matrix.
+#' @param standarize_factor_variance TRUE or FALSE
 #'
 #' @return List of dataframes which contain factor scores.
 #' @import optimParallel
@@ -60,7 +62,10 @@ rosetta = function(d,
                    factor_structure,
                    missing_corr = 'normal',
                    id_colnames = NULL,
-                   number_cores = 1) {
+                   number_cores = 1,
+                   matrix_type=c("covariance","pearson")[2],
+                   standarize_factor_variance=c(TRUE,FALSE)[2]
+) {
   # Check arguments
   if(!all(unlist(lapply(d, is.data.frame)))) {
     stop("Check the 'd' argument in function rosetta::rosetta(). 'd' needs to be a list of dataframes.")
@@ -107,7 +112,8 @@ rosetta = function(d,
 
     ## observed pairwise complete covariance matrix
     obs_cov = get_obs_cov(d_bind,
-                          id_colnames)
+                          id_colnames,
+                          type=matrix_type)
 
   } else if (all(missing_corr=='missing')){
     message("Missing elements in covariance matrix. Using Steve's Matrix Imputation Algorithm")
@@ -134,7 +140,7 @@ rosetta = function(d,
       mat_par[index_na[,2], index_na[,1]] <- par
 
       # Difference between original matrix and nearest positive definite chosen matrix
-      matt_diff = mat - Matrix::nearPD(mat_par, corr = FALSE, maxit = 500, conv.norm.type="F")[["mat"]]
+      matt_diff = mat - Matrix::nearPD(mat_par, corr = TRUE, maxit = 500, conv.norm.type="F")[["mat"]]
       # Calculate Frobenius norm of difference matrix
       frob_norm = sum(matt_diff^2, na.rm = TRUE)^(1/2)
       return(frob_norm)
@@ -143,13 +149,12 @@ rosetta = function(d,
     data = dplyr::bind_rows(d)
     if(!is.null(id_colnames))data <- data[,-which(colnames(data) %in% id_colnames)]
     # head(data)
-#
-#     # # combined data (now we want NAs in columns)
-#     d_bind = rosetta_bind(d)
+    #
+    #     # # combined data (now we want NAs in columns)
+    #     d_bind = rosetta_bind(d)
 
     ## observed pairwise complete covariance matrix
-    cov_mat = get_obs_cov(data,
-                          id_colnames)
+    cov_mat = get_obs_cov(data,type=matrix_type)
 
     cor_mat = stats::cov2cor(cov_mat)
 
@@ -167,41 +172,56 @@ rosetta = function(d,
       parallel::setDefaultCluster(cl=cl) # set 'cl' as default cluster
       val = optimParallel::optimParallel(
         par = par,
-        mat = cov_mat,
+        mat = cor_mat,
         fn = sm,
         lower = -1,
         upper = 1,
         method = "L-BFGS-B")
       parallel::stopCluster(cl)
     } else {
-      par = randtoolbox::sobol(n_initial)*2-1
+      message("optimizing...")
+      # par = randtoolbox::sobol(n_initial)*2-1
+      par = runif(n_initial,-1e-4,1e-4)
+
       # 2. Find values which minimize the frobenius norm
       val = stats::optim(
         par = par,
-        mat = cov_mat,
+        mat = cor_mat,
         fn = sm,
         lower = -1,
         upper = 1,
         method = "L-BFGS-B"
       )
+      if (val$convergence == 0) {
+        message("Optimization for matrix imputation successfully converged!")
+      } else {
+        warning("Optimization for matrix imputation failed to converge.")
+      }
 
     }
     # 3. Put the estimated values back in original matrix
     #    There should be a better way...
-    mat_optim = cov_mat
+    mat_optim = cor_mat
     mat_optim[lower.tri(mat_optim)] = 0
     index_na = which(is.na(mat_optim), arr.ind = TRUE)
-    mat_optim = cov_mat
+    mat_optim = cor_mat
     for (i in 1:nrow(index_na)) {
       mat_optim[index_na[i,1], index_na[i,2]] = val[["par"]][i]
       mat_optim[index_na[i,2], index_na[i,1]] = val[["par"]][i]
     }
 
-    if(!matrixcalc::is.positive.definite(mat_optim)){
-      warning("after steve's matrix imputation algorithm, cov matrix is not positive semidefinite, attempting to coerce to positive semidefinite matrix")
-      obs_cov = Matrix::nearPD(mat_optim, corr = FALSE, maxit = 500, conv.norm.type="F")$mat |> as.matrix()
-    } else{
-      obs_cov = mat_optim
+    mat_optim_cov = diag(sqrt(diag(cov_mat))) %*%
+      mat_optim %*%
+      diag(sqrt(diag(cov_mat)))
+
+    colnames(mat_optim_cov) <- colnames(cor_mat)
+    rownames(mat_optim_cov) <- rownames(cor_mat)
+
+    if(! (all(eigen(mat_optim_cov)$values > 1e-6) & isSymmetric(mat_optim_cov))){
+      warning("after steve's matrix imputation algorithm, cov/cor matrix is not positive semidefinite, attempting to coerce to positive semidefinite matrix")
+      obs_cov = Matrix::nearPD(mat_optim_cov, corr = ifelse(matrix_type=="pearson",TRUE,FALSE), maxit = 50000, conv.norm.type="F")$mat |> as.matrix()
+    } else {
+      obs_cov = mat_optim_cov
     }
   }
 
@@ -214,9 +234,9 @@ rosetta = function(d,
   ## the overall lavaan fit
   unconstrained_fit =
     lavaan::cfa(model = lavaan_model,
-                sample.cov = obs_cov,
+                sample.cov = obs_cov ,
                 sample.nobs = n_data_mean,
-                std.lv = TRUE)
+                std.lv = standarize_factor_variance)
 
 
   ## factor covariance estimates
@@ -225,6 +245,8 @@ rosetta = function(d,
 
   # step 2. constrained model
   constrained_fit_list = lapply(d, function(x) {
+
+
     constrained_struc = lapply(factor_structure, function(y) {
       intersect(names(x), y)
     })
@@ -235,7 +257,7 @@ rosetta = function(d,
                             unconstrained_fit)
 
     # observed pairwise complete covariance matrix
-    obs_cov = get_obs_cov(x,id_colnames)
+    obs_cov = get_obs_cov(x,id_colnames,type=matrix_type)
     tmp_unlist = unlist(constrained_struc,recursive = TRUE)
     obs_cov_subset = obs_cov[tmp_unlist,tmp_unlist]
 
@@ -245,15 +267,45 @@ rosetta = function(d,
       lavaan::cfa(model = lavaan_model_constrained,
                   sample.cov = obs_cov,
                   sample.nobs = n_data_mean,
-                  std.lv = TRUE)
+                  std.lv = standarize_factor_variance)
 
-    # model results
+
+    if(matrix_type ==  "pearson"){
+      # calculate mean and sd to normalize across all data sets (preserving difference in mean/sd across data sets
+
+      mus = data |> colMeans(na.rm = TRUE)
+      names(mus) <- colnames(data)
+
+      sigma = data |> apply(2,sd,na.rm = TRUE)
+      names(sigma) <- colnames(data)
+
+      if( !(all(is.finite(sigma)) & all(sigma>0)) ){
+        warning(paste0("WARNING: variance is not postive & finite for: ", names(sigma[is.finite(sigma)])," across data sets. Program may fail or operate in unexpected ways"))
+      }
+      if(!all(is.finite(mus))) {
+        warning(paste0("WARNING: mean is not finite for: ", names(mus[is.finite(mus)])," across data sets. Program may fail or operate in unexpected ways"))
+      }
+    }
+
+    # now normalize x using the above calculated means and sds
+    x_for_scores = x
+    if(!is.null(id_colnames)){
+      x_for_scores =  x_for_scores |> select(-all_of(c(id_colnames)))
+    }
+    if(matrix_type ==  "pearson"){
+      for(j in 1:ncol(x_for_scores)){
+        x_for_scores[,j] = (x_for_scores[,j] -
+                              mus[which(names(mus) == (colnames(x_for_scores)[j]) )])/
+          sigma[which(names(sigma) == (colnames(x_for_scores)[j]) )]
+      }
+    }
+
+
     constrained_factor_scores =
-      as.data.frame(lavaan::lavPredict(constrained_fit, newdata = x))
+      as.data.frame(lavaan::lavPredict(constrained_fit, newdata = x_for_scores))
 
     # select ID rows
     if(!is.null(id_colnames)){
-
       id_df = as.data.frame(x[,id_colnames])
       colnames(id_df) <- id_colnames
 
@@ -335,12 +387,21 @@ get_lavaan_model_text = function(factor_structure,lavaan_obj=NULL) {
 }
 
 # Returns the observed pairwise complete covariance matrix.
-get_obs_cov = function(d, id_col = NULL) {
+get_obs_cov = function(d, id_col = NULL,type) {
   d = d[, colSums(is.na(d)) < nrow(d)] # Remove columns which only contain NA
 
   if(!is.null(id_col))d = d[, -which(colnames(d) %in% id_col)]
-  obs_cov = stats::cov(d, method = "pearson", use = "pairwise.complete.obs")
-  obs_cov
+  if(type=="covariance"){
+    obs_cov = stats::cov(d,
+                         method = "pearson",
+                         use = "pairwise.complete.obs")
+  }
+  if(type=="pearson"){
+    obs_cov = stats::cor(d,
+                         method = "pearson",
+                         use = "pairwise.complete.obs")
+  }
+  return(obs_cov)
 }
 
 # Extract covariance estimates from lavaan model fit
